@@ -145,6 +145,50 @@ LIGHT_THEME = """
     QLabel {
         color: #333333;
     }
+    QPushButton#btnManageModels {
+        padding: 4px 10px;
+        min-height: 22px;
+        font-size: 12px;
+    }
+    QPushButton#btnDownload {
+        background-color: #1a73e8;
+        color: white;
+        border-color: #1557b0;
+        font-weight: bold;
+    }
+    QPushButton#btnDownload:hover {
+        background-color: #1557b0;
+    }
+    QPushButton#btnDownload:pressed {
+        background-color: #0d47a1;
+    }
+    QPushButton#btnDownload:disabled {
+        background-color: #a8c7f0;
+        color: #e3f2fd;
+        border-color: #a8c7f0;
+    }
+    QPushButton#btnDelete {
+        background-color: #f44336;
+        color: white;
+        border-color: #e53935;
+    }
+    QPushButton#btnDelete:hover {
+        background-color: #e53935;
+    }
+    QPushButton#btnDelete:pressed {
+        background-color: #c62828;
+    }
+    QPushButton#btnSetDefault {
+        background-color: #4caf50;
+        color: white;
+        border-color: #43a047;
+    }
+    QPushButton#btnSetDefault:hover {
+        background-color: #43a047;
+    }
+    QPushButton#btnSetDefault:pressed {
+        background-color: #388e3c;
+    }
 """
 
 DARK_THEME = """
@@ -282,6 +326,53 @@ DARK_THEME = """
     }
     QSplitter::handle {
         background-color: #333333;
+    }
+    QPushButton#btnManageModels {
+        padding: 4px 10px;
+        min-height: 22px;
+        font-size: 12px;
+    }
+    QPushButton#btnDownload {
+        background-color: #1a73e8;
+        color: white;
+        border-color: #1557b0;
+        font-weight: bold;
+    }
+    QPushButton#btnDownload:hover {
+        background-color: #2979ff;
+    }
+    QPushButton#btnDownload:pressed {
+        background-color: #1557b0;
+    }
+    QPushButton#btnDownload:disabled {
+        background-color: #1a3d5c;
+        color: #4a7aab;
+        border-color: #1a3d5c;
+    }
+    QPushButton#btnDelete {
+        background-color: #c62828;
+        color: white;
+        border-color: #b71c1c;
+    }
+    QPushButton#btnDelete:hover {
+        background-color: #d32f2f;
+    }
+    QPushButton#btnDelete:pressed {
+        background-color: #b71c1c;
+    }
+    QPushButton#btnSetDefault {
+        background-color: #2e7d32;
+        color: white;
+        border-color: #1b5e20;
+    }
+    QPushButton#btnSetDefault:hover {
+        background-color: #388e3c;
+    }
+    QPushButton#btnSetDefault:pressed {
+        background-color: #1b5e20;
+    }
+    QDialog {
+        background-color: #1e1e1e;
     }
 """
 

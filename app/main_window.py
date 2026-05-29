@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
@@ -16,8 +16,10 @@ from app.worker import TranscribeWorker
 from app.settings import AppSettings
 from app.utils import (
     get_file_filter, is_supported_file, get_output_path,
-    segments_to_srt, segments_to_txt, format_duration, check_ffmpeg,
+    segments_to_srt, segments_to_txt, format_duration,
 )
+from app.model_manager import ModelManager, ModelStatus, MODEL_INFO
+from app.model_manager_dialog import ModelManagerDialog
 
 
 class MainWindow(QMainWindow):
@@ -37,10 +39,6 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._setup_styles()
         self._load_settings()
-
-        # 启动时检查 ffmpeg
-        if not check_ffmpeg():
-            self._show_ffmpeg_dialog()
 
     # ─── UI 构建 ─────────────────────────────────────────────
 
@@ -105,10 +103,14 @@ class MainWindow(QMainWindow):
         model_row.addWidget(QLabel("模型:"))
         self._combo_model = QComboBox()
         self._combo_model.setView(QListView())
-        for m in AVAILABLE_MODELS:
-            self._combo_model.addItem(m, m)
+        self._init_model_combo()
         self._combo_model.currentIndexChanged.connect(self._on_settings_changed)
         model_row.addWidget(self._combo_model, 1)
+
+        self._btn_manage_models = QPushButton("管理")
+        self._btn_manage_models.setObjectName("btnManageModels")
+        self._btn_manage_models.clicked.connect(self._open_model_manager)
+        model_row.addWidget(self._btn_manage_models)
         settings_layout.addLayout(model_row)
 
         # 语言选择
@@ -201,72 +203,6 @@ class MainWindow(QMainWindow):
         from app.theme import get_stylesheet
         self.setStyleSheet(get_stylesheet())
 
-    # ─── FFmpeg 下载对话框 ─────────────────────────────────────
-
-    def _show_ffmpeg_dialog(self):
-        """ffmpeg 缺失时显示下载选项对话框"""
-        import platform
-
-        if platform.system() == "Windows":
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Icon.Warning)
-            msg.setWindowTitle("需要 FFmpeg")
-            msg.setText("未检测到 FFmpeg，无法处理音视频文件。")
-            msg.setInformativeText(
-                "FFmpeg 是处理音视频格式的必要组件。\n\n"
-                "您可以选择自动下载（约100MB，需要联网），\n"
-                "或手动下载后放入程序目录。"
-            )
-
-            btn_auto = msg.addButton("自动下载", QMessageBox.ButtonRole.AcceptRole)
-            btn_manual = msg.addButton("手动下载", QMessageBox.ButtonRole.HelpRole)
-            btn_skip = msg.addButton("暂时跳过", QMessageBox.ButtonRole.RejectRole)
-
-            msg.exec()
-
-            clicked = msg.clickedButton()
-            if clicked == btn_auto:
-                self._auto_download_ffmpeg()
-            elif clicked == btn_manual:
-                QMessageBox.information(
-                    self, "手动下载指引",
-                    "请按以下步骤操作：\n\n"
-                    "1. 访问 https://github.com/BtbN/FFmpeg-Builds/releases\n"
-                    "2. 下载 ffmpeg-master-latest-win64-gpl.zip\n"
-                    "3. 解压后将 bin/ffmpeg.exe 复制到程序目录的 ffmpeg/ 文件夹下\n"
-                    "4. 重启程序"
-                )
-        else:
-            # macOS / Linux
-            msg_text = "未检测到 FFmpeg，部分格式可能无法转录。\n\n"
-            if platform.system() == "Darwin":
-                msg_text += "请安装：brew install ffmpeg"
-            else:
-                msg_text += "请安装：sudo apt install ffmpeg"
-            QMessageBox.warning(self, "需要 FFmpeg", msg_text)
-
-    def _auto_download_ffmpeg(self):
-        """自动下载 ffmpeg，显示进度"""
-        from app.utils import download_ffmpeg
-
-        # 显示等待提示
-        self._label_status.setText("正在下载 FFmpeg，请稍候...")
-        QApplication.processEvents()
-
-        success = download_ffmpeg()
-
-        if success:
-            QMessageBox.information(self, "完成", "FFmpeg 下载成功！")
-            self._label_status.setText("FFmpeg 已就绪")
-        else:
-            QMessageBox.warning(
-                self, "下载失败",
-                "FFmpeg 自动下载失败，请检查网络连接或手动下载。\n\n"
-                "下载地址：https://github.com/BtbN/FFmpeg-Builds/releases\n"
-                "将 ffmpeg.exe 放入程序的 ffmpeg/ 目录中。"
-            )
-            self._label_status.setText("就绪（FFmpeg 未安装）")
-
     # ─── 拖拽支持 ─────────────────────────────────────────────
 
     def dragEnterEvent(self, event: QDragEnterEvent):
@@ -355,6 +291,7 @@ class MainWindow(QMainWindow):
         self._worker.all_completed.connect(self._on_all_completed)
         self._worker.error_occurred.connect(self._on_error_occurred)
         self._worker.status_message.connect(self._on_status_message)
+        self._worker.finished.connect(self._reset_ui_state)
 
         # 切换按钮状态
         self._btn_start.setEnabled(False)
@@ -367,6 +304,21 @@ class MainWindow(QMainWindow):
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
             self._label_status.setText("正在取消...")
+            self._btn_cancel.setEnabled(False)
+
+            # 启动超时检查定时器
+            self._cancel_timer = QTimer(self)
+            self._cancel_timer.setSingleShot(True)
+            self._cancel_timer.timeout.connect(self._force_cancel)
+            self._cancel_timer.start(5000)  # 5秒超时
+
+    def _force_cancel(self):
+        """超时后强制终止转录线程"""
+        if self._worker and self._worker.isRunning():
+            self._worker.terminate()
+            self._worker.wait(2000)
+            self._label_status.setText("已强制取消")
+            self._reset_ui_state()
 
     def _set_settings_enabled(self, enabled: bool):
         """批量启用/禁用设置控件"""
@@ -439,6 +391,9 @@ class MainWindow(QMainWindow):
 
     def _reset_ui_state(self):
         """重置按钮和设置控件状态"""
+        # 清理取消超时定时器
+        if hasattr(self, '_cancel_timer') and self._cancel_timer.isActive():
+            self._cancel_timer.stop()
         self._btn_start.setEnabled(True)
         self._btn_cancel.setEnabled(False)
         self._set_settings_enabled(True)
@@ -499,6 +454,39 @@ class MainWindow(QMainWindow):
         clipboard = QApplication.clipboard()
         clipboard.setText(text)
         self._label_status.setText("已复制到剪贴板")
+
+    # ─── 模型管理 ─────────────────────────────────────────────
+
+    def _init_model_combo(self):
+        """初始化模型下拉框，标记未下载模型"""
+        manager = ModelManager()
+        self._combo_model.clear()
+        for m in AVAILABLE_MODELS:
+            status = manager.get_model_status(m)
+            if status == ModelStatus.DOWNLOADED:
+                display_text = m
+            else:
+                display_text = f"{m} (未下载)"
+            self._combo_model.addItem(display_text, m)
+
+    def _open_model_manager(self):
+        """打开模型管理对话框"""
+        dialog = ModelManagerDialog(self)
+        dialog.model_changed.connect(self._refresh_model_combo)
+        dialog.show()
+
+    def _refresh_model_combo(self):
+        """模型变更后刷新下拉框"""
+        current_data = self._combo_model.currentData()
+        self._combo_model.blockSignals(True)
+        try:
+            self._init_model_combo()
+            # 恢复之前的选择
+            idx = self._combo_model.findData(current_data)
+            if idx >= 0:
+                self._combo_model.setCurrentIndex(idx)
+        finally:
+            self._combo_model.blockSignals(False)
 
     # ─── 设置持久化 ───────────────────────────────────────────
 

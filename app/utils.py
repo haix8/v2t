@@ -1,6 +1,4 @@
 """工具函数"""
-import os
-import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -32,46 +30,6 @@ def is_supported_file(file_path: str) -> bool:
     """检查文件是否为支持的格式"""
     ext = Path(file_path).suffix.lower()
     return ext in SUPPORTED_EXTENSIONS
-
-
-def get_ffmpeg_path() -> str:
-    """获取 ffmpeg 可执行文件路径，优先使用内置版本"""
-    import sys
-
-    ffmpeg_name = 'ffmpeg.exe' if os.name == 'nt' else 'ffmpeg'
-
-    # 打包后的路径
-    if getattr(sys, 'frozen', False):
-        # PyInstaller 打包环境
-        base_dir = os.path.dirname(sys.executable)
-        # PyInstaller 6.x 将文件放在 _internal/ 下
-        search_paths = [
-            os.path.join(base_dir, '_internal', 'ffmpeg', ffmpeg_name),
-            os.path.join(base_dir, 'ffmpeg', ffmpeg_name),
-            os.path.join(base_dir, '_internal', ffmpeg_name),
-            os.path.join(base_dir, ffmpeg_name),
-        ]
-        for p in search_paths:
-            if os.path.isfile(p):
-                return p
-    else:
-        # 开发环境，检查项目目录
-        project_dir = Path(__file__).parent.parent
-        bundled = project_dir / 'ffmpeg' / ffmpeg_name
-        if bundled.is_file():
-            return str(bundled)
-
-    # 回退到系统 PATH
-    system_ffmpeg = shutil.which("ffmpeg")
-    if system_ffmpeg:
-        return system_ffmpeg
-
-    return ""
-
-
-def check_ffmpeg() -> bool:
-    """检查 ffmpeg 是否可用"""
-    return bool(get_ffmpeg_path())
 
 
 def get_output_path(input_path: str, output_dir: Optional[str], fmt: str = "txt") -> str:
@@ -140,58 +98,3 @@ def format_duration(seconds: float) -> str:
         return f"{minutes}分{secs}秒"
     else:
         return f"{secs}秒"
-
-
-def download_ffmpeg() -> bool:
-    """
-    自动下载 ffmpeg 到项目/程序的 ffmpeg/ 目录
-    仅支持 Windows，返回是否下载成功
-    """
-    import sys
-    import platform
-    import urllib.request
-    import zipfile
-    import tempfile
-
-    if platform.system() != "Windows":
-        return False
-
-    # 确定目标目录
-    if getattr(sys, 'frozen', False):
-        base_dir = os.path.dirname(sys.executable)
-    else:
-        base_dir = str(Path(__file__).parent.parent)
-
-    ffmpeg_dir = os.path.join(base_dir, 'ffmpeg')
-    os.makedirs(ffmpeg_dir, exist_ok=True)
-
-    target_path = os.path.join(ffmpeg_dir, 'ffmpeg.exe')
-    if os.path.isfile(target_path):
-        return True
-
-    # 从 GitHub 下载 ffmpeg essentials
-    # 使用 BtbN 的 release（稳定可靠）
-    url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
-
-    try:
-        # 下载到临时文件
-        temp_zip = os.path.join(tempfile.gettempdir(), 'ffmpeg_download.zip')
-        urllib.request.urlretrieve(url, temp_zip)
-
-        # 解压并提取 ffmpeg.exe
-        with zipfile.ZipFile(temp_zip, 'r') as zf:
-            # 在 zip 中查找 ffmpeg.exe
-            for name in zf.namelist():
-                if name.endswith('bin/ffmpeg.exe'):
-                    # 提取到目标位置
-                    with zf.open(name) as src, open(target_path, 'wb') as dst:
-                        shutil.copyfileobj(src, dst)
-                    break
-
-        # 清理临时文件
-        if os.path.exists(temp_zip):
-            os.remove(temp_zip)
-
-        return os.path.isfile(target_path)
-    except Exception:
-        return False

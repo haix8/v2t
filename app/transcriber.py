@@ -39,9 +39,10 @@ class Transcriber:
         # 自动选择设备和计算类型
         if device == "auto":
             try:
-                import torch
-                self.device = "cuda" if torch.cuda.is_available() else "cpu"
-            except ImportError:
+                import ctranslate2
+                cuda_types = ctranslate2.get_supported_compute_types("cuda")
+                self.device = "cuda" if cuda_types else "cpu"
+            except Exception:
                 self.device = "cpu"
         else:
             self.device = device
@@ -53,13 +54,7 @@ class Transcriber:
 
     def load_model(self):
         """加载模型"""
-        # 确保内置 ffmpeg 在 PATH 中
-        from app.utils import get_ffmpeg_path
-        ffmpeg_path = get_ffmpeg_path()
-        if ffmpeg_path:
-            ffmpeg_dir = os.path.dirname(ffmpeg_path)
-            if ffmpeg_dir not in os.environ.get('PATH', ''):
-                os.environ['PATH'] = ffmpeg_dir + os.pathsep + os.environ.get('PATH', '')
+        # PyAV 内置 FFmpeg 库，无需外部 ffmpeg 二进制
 
         # 查找本地预置模型
         model_path = self._find_local_model()
@@ -123,7 +118,6 @@ class Transcriber:
         snapshot_download(
             repo_id=repo_id,
             local_dir=local_dir,
-            local_dir_use_symlinks=False,
         )
         return local_dir
 
@@ -132,6 +126,7 @@ class Transcriber:
         audio_path: str,
         language: Optional[str] = None,
         progress_callback: Optional[Callable[[float], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
     ) -> dict:
         """
         转录音频文件
@@ -140,6 +135,7 @@ class Transcriber:
             audio_path: 音频文件路径
             language: 语言代码, None 表示自动检测
             progress_callback: 进度回调函数, 参数为 0.0~1.0 的浮点数
+            cancel_check: 取消检查函数, 返回 True 表示应取消
             
         Returns:
             dict: {
@@ -159,8 +155,8 @@ class Transcriber:
             audio_path,
             language=lang,
             beam_size=5,
-            vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=500),
+            vad_filter=False,
+            # vad_parameters=dict(min_silence_duration_ms=500),
         )
 
         duration = info.duration
@@ -170,6 +166,10 @@ class Transcriber:
         full_text_parts = []
 
         for segment in segments_iter:
+            # 检查是否被取消
+            if cancel_check and cancel_check():
+                raise InterruptedError("转录已取消")
+
             segments.append({
                 "start": segment.start,
                 "end": segment.end,

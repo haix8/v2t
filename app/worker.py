@@ -51,6 +51,7 @@ class TranscribeWorker(QThread):
                     audio_path=file_path,
                     language=self.language if self.language != "auto" else None,
                     progress_callback=on_progress,
+                    cancel_check=lambda: self._cancelled,
                 )
 
                 if not self._cancelled:
@@ -58,6 +59,10 @@ class TranscribeWorker(QThread):
             except Exception as e:
                 if not self._cancelled:
                     self.error_occurred.emit(i, str(e))
+
+            if self._cancelled:
+                self.status_message.emit("已取消")
+                return
 
         if not self._cancelled:
             self.all_completed.emit()
