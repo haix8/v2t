@@ -3,6 +3,10 @@ __pycache__/
 *$py.class
 venv/
 
+# PyInstaller 构建产物
+build/
+dist/
+*.spec.bak
 
 # 系统文件
 .DS_Store
